@@ -1,0 +1,23 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "LONET 2 Plugin",
+	"Description": "Receive realtime virtual production data",
+	"Category": "Virtual Production",
+	"CreatedBy": "LOLED Virtual, LLC",
+	"CreatedByURL": "https://www.loledvirtual.com",
+	"DocsURL": "https://docs.unrealengine.com/en-US/Engine/Animation/LiveLinkPlugin/index.html",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "LONET2LiveLink",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+  ]
+}
