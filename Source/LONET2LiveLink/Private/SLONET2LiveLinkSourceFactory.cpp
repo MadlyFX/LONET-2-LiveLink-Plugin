@@ -15,7 +15,7 @@ void SLONET2LiveLinkSourceFactory::Construct(const FArguments& Args)
 	OkClicked = Args._OnOkClicked;
 
 	FIPv4Endpoint Endpoint;
-	Endpoint.Address = FIPv4Address(224,0,23,12);
+	Endpoint.Address = FIPv4Address(236,12,12,12);
 	Endpoint.Port = 60608;
 
 	ChildSlot
