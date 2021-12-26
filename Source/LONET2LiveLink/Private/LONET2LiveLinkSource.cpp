@@ -96,6 +96,7 @@ FLONET2LiveLinkSource::~FLONET2LiveLinkSource()
 		Socket->Close();
 		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
 	}
+
 }
 
 void FLONET2LiveLinkSource::ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid)
@@ -184,7 +185,8 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 		const TSharedPtr<FJsonObject> *EncoderObject;
 		bool bHasEncoderData = JsonObject->TryGetObjectField("encoder_data", EncoderObject);
 		if (bHasEncoderData) {//Pure encoder data should come in as camera data
-			FName SubjectName = (FName)EncoderObject->Get()->GetStringField("cameraName");
+			FString tmpName = EncoderObject->Get()->GetStringField("cameraName") + " Lens";
+			FName SubjectName(tmpName);
 
 			if (!EncounteredSubjects.Contains(SubjectName)) {
 				FLiveLinkStaticDataStruct StaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkCameraStaticData::StaticStruct());
@@ -197,7 +199,7 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 				CameraData.bIsLocationSupported = false;
 				CameraData.bIsScaleSupported = false;
 				CameraData.bIsRotationSupported = false;
-
+				
 				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkCameraRole::StaticClass(), MoveTemp(StaticDataStruct));
 				EncounteredSubjects.Add(SubjectName);
 			}
@@ -205,15 +207,46 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkCameraFrameData::StaticStruct());
 			FLiveLinkCameraFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkCameraFrameData>();
 
-			double focalLengthRaw, focalLengthMapped, irisRaw, irisMapped, focusRaw, focusMapped;
-			
+			double focalLengthRaw, focalLengthMapped, irisRaw, irisMapped, focusRaw, focusMapped, frameRate;
+			bool dropFrame = false;
 			EncoderObject->Get()->TryGetNumberField(TEXT("focalLengthRaw"), focalLengthRaw);
 			EncoderObject->Get()->TryGetNumberField(TEXT("focalLengthMapped"), focalLengthMapped);
 			EncoderObject->Get()->TryGetNumberField(TEXT("irisRaw"), irisRaw);
 			EncoderObject->Get()->TryGetNumberField(TEXT("irisMapped"), irisMapped);
 			EncoderObject->Get()->TryGetNumberField(TEXT("focusRaw"), focusRaw);
 			EncoderObject->Get()->TryGetNumberField(TEXT("focusMapped"), focusMapped);
+			EncoderObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
+			FString timecodeToSplit;
+			EncoderObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
+			TArray<FString> splitDataTC;
+			timecodeToSplit.ParseIntoArray(splitDataTC, TEXT(":"), true);
 
+			if (splitDataTC.Num() != 4) {
+				UE_LOG(LogTemp, Warning, TEXT("TC Packet %s \n"), *timecodeToSplit);
+				UE_LOG(LogTemp, Warning, TEXT("LOLED|XDTimecode Malformed"));
+				UE_LOG(LogTemp, Warning, TEXT("LOLED|Got %i"), splitDataTC.Num());
+			}
+			else {
+				TimeCode.Hours = FCString::Atoi(*splitDataTC[0]);
+				TimeCode.Minutes = FCString::Atoi(*splitDataTC[1]);
+				TimeCode.Seconds = FCString::Atoi(*splitDataTC[2]);
+				TimeCode.Frames = FCString::Atoi(*splitDataTC[3]);
+				TimeCode.bDropFrameFormat = dropFrame;
+			}
+
+			int num = 0;
+			int dem = 0;
+			//It's a decimal framerate, realistically this will only be an NTSC framerate
+			if (FGenericPlatformMath::Fmod((float)frameRate, 1)) {
+				dem = 1001;
+				num = (int)FMath::RoundHalfFromZero(frameRate) * 1000;
+			}
+			else {
+				dem = 1;
+				num = (int)frameRate;
+			}
+
+			
 
 			FrameData.Aperture = irisMapped;
 			FrameData.FocalLength = focalLengthMapped;
@@ -244,9 +277,11 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 				DistortionData.bIsScaleSupported = false;
 				DistortionData.bIsRotationSupported = false;
 
+				
+
 				DistortionData.LensModel = (FName)DistortionObject->Get()->GetStringField("modelName");
 
-				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkCameraRole::StaticClass(), MoveTemp(DistortionDataStaticStruct));
+				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkLensRole::StaticClass(), MoveTemp(DistortionDataStaticStruct));
 				EncounteredSubjects.Add(SubjectName);
 			}
 
@@ -283,6 +318,106 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
 
 		}
+
+		////camera
+
+		const TSharedPtr<FJsonObject>* CameraObject;
+		bool bHasCamersData = JsonObject->TryGetObjectField("camera_transform_data", CameraObject);
+		if (bHasCamersData) {
+			FString tmpName = CameraObject->Get()->GetStringField("cameraName") + " Transform";
+			FName SubjectName(tmpName);
+			
+			//FName SubjectName = "trackertest";
+			if (!EncounteredSubjects.Contains(SubjectName)) {
+				FLiveLinkStaticDataStruct CameraDataStaticStruct(FLiveLinkTransformStaticData::StaticStruct());
+				FLiveLinkTransformStaticData CameraData = *CameraDataStaticStruct.Cast< FLiveLinkTransformStaticData>();
+
+				CameraData.bIsLocationSupported = true;
+				CameraData.bIsScaleSupported = false;
+				CameraData.bIsRotationSupported = true;
+				/*
+				CameraData.PropertyNames.SetNumUninitialized(7);
+				CameraData.PropertyNames[0] = FName("focusRaw");
+				CameraData.PropertyNames[1] = FName("irisRaw");
+				CameraData.PropertyNames[2] = FName("zoomRaw");
+				CameraData.PropertyNames[3] = FName("whiteBalance");
+				CameraData.PropertyNames[4] = FName("tint");
+				CameraData.PropertyNames[5] = FName("ISO");
+				CameraData.PropertyNames[6] = FName("shutter");
+				*/
+
+				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkTransformRole::StaticClass(), MoveTemp(CameraDataStaticStruct));
+				EncounteredSubjects.Add(SubjectName);
+			}
+
+			FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkTransformFrameData::StaticStruct());
+			FLiveLinkTransformFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkTransformFrameData>();
+
+			double focalLengthRaw, irisRaw, focusRaw, whiteBalance, tint, ISO, shutter,frameRate;
+			bool dropFrame = false;
+
+			CameraObject->Get()->TryGetNumberField(TEXT("whiteBalance"), whiteBalance);
+			CameraObject->Get()->TryGetNumberField(TEXT("tint"), tint);
+			CameraObject->Get()->TryGetNumberField(TEXT("ISO"), ISO);
+			CameraObject->Get()->TryGetNumberField(TEXT("shutter"), shutter);
+			CameraObject->Get()->TryGetNumberField(TEXT("focalLengthRaw"), focalLengthRaw);
+			CameraObject->Get()->TryGetNumberField(TEXT("irisRaw"), irisRaw);
+			CameraObject->Get()->TryGetNumberField(TEXT("focusRaw"), focusRaw);
+
+			CameraObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
+			CameraObject->Get()->TryGetBoolField(TEXT("dropFrame"), dropFrame);
+			TArray<TSharedPtr<FJsonValue>> positionArray = CameraObject->Get()->GetArrayField("position");
+			TArray<TSharedPtr<FJsonValue>> rotationArray = CameraObject->Get()->GetArrayField("orientation");
+
+			FString timecodeToSplit;
+			CameraObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
+			TArray<FString> splitDataTC;
+			timecodeToSplit.ParseIntoArray(splitDataTC, TEXT(":"), true);
+
+			if (splitDataTC.Num() != 4) {
+				UE_LOG(LogTemp, Warning, TEXT("TC Packet %s \n"), *timecodeToSplit);
+				UE_LOG(LogTemp, Warning, TEXT("LOLED|XDTimecode Malformed"));
+				UE_LOG(LogTemp, Warning, TEXT("LOLED|Got %i"), splitDataTC.Num());
+			}
+			else {
+				TimeCode.Hours = FCString::Atoi(*splitDataTC[0]);
+				TimeCode.Minutes = FCString::Atoi(*splitDataTC[1]);
+				TimeCode.Seconds = FCString::Atoi(*splitDataTC[2]);
+				TimeCode.Frames = FCString::Atoi(*splitDataTC[3]);
+				TimeCode.bDropFrameFormat = dropFrame;
+			}
+
+			int num = 0;
+			int dem = 0;
+			//It's a decimal framerate, realistically this will only be an NTSC framerate
+			if (FGenericPlatformMath::Fmod((float)frameRate, 1)) {
+				dem = 1001;
+				num = (int)FMath::RoundHalfFromZero(frameRate)*1000;
+			}
+			else {
+				dem = 1;
+				num = (int)frameRate;
+			}
+
+			FrameData.Transform.SetLocation(FVector(positionArray[0].Get()->AsNumber(), positionArray[1].Get()->AsNumber(), positionArray[2].Get()->AsNumber()));
+			FrameData.Transform.SetRotation(FQuat(rotationArray[0].Get()->AsNumber(), rotationArray[1].Get()->AsNumber(), rotationArray[2].Get()->AsNumber(), rotationArray[3].Get()->AsNumber()));
+			FrameData.MetaData.SceneTime = FQualifiedFrameTime(TimeCode, FFrameRate(num, dem));
+			/*
+			FrameData.PropertyValues.SetNumUninitialized(7);
+			FrameData.PropertyValues[0] = 1.0f;
+			FrameData.PropertyValues[1] = 1.0f;
+			FrameData.PropertyValues[2] = 1.0f;
+			FrameData.PropertyValues[3] = 1.0f;
+			FrameData.PropertyValues[4] = 1.0f;
+			FrameData.PropertyValues[5] = 1.0f;
+			//FrameData.PropertyValues[6] = 1.0f;
+			*/
+
+
+			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
+
+		}
+
 
 	
 	}

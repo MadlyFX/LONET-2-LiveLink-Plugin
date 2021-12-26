@@ -29,6 +29,7 @@ public class LONET2LiveLink : ModuleRules
 				"Slate",
 				"SlateCore",
 				"Sockets",
+				"LiveLinkLens"
 			});
 	}
 }

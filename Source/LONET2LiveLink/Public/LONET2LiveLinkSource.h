@@ -50,6 +50,9 @@ public:
 
 	void HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> ReceivedData);
 
+	FTimecode TimeCode;
+	FFrameRate FrameRate;
+
 private:
 
 	ILiveLinkClient* Client;
