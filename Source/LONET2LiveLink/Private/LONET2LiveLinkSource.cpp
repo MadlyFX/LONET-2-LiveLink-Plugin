@@ -85,17 +85,6 @@ FLONET2LiveLinkSource::FLONET2LiveLinkSource(FIPv4Endpoint InEndpoint)
 FLONET2LiveLinkSource::~FLONET2LiveLinkSource()
 {
 	Stop();
-	if (Thread != nullptr)
-	{
-		Thread->WaitForCompletion();
-		delete Thread;
-		Thread = nullptr;
-	}
-	if (Socket != nullptr)
-	{
-		Socket->Close();
-		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
-	}
 
 }
 
@@ -117,7 +106,7 @@ bool FLONET2LiveLinkSource::IsSourceStillValid() const
 bool FLONET2LiveLinkSource::RequestSourceShutdown()
 {
 	Stop();
-
+	while(!Stopped){}
 	return true;
 }
 // FRunnable interface
@@ -132,6 +121,18 @@ void FLONET2LiveLinkSource::Start()
 
 void FLONET2LiveLinkSource::Stop()
 {
+	if (Thread != nullptr)
+	{
+		Thread->WaitForCompletion();
+		delete Thread;
+		Thread = nullptr;
+		Stopped = true;
+	}
+	if (Socket != nullptr)
+	{
+		Socket->Close();
+		ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->DestroySocket(Socket);
+	}
 	Stopping = true;
 }
 
@@ -167,6 +168,7 @@ uint32 FLONET2LiveLinkSource::Run()
 
 void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> ReceivedData)
 {
+	
 	//UE_LOG(ModuleLog, Warning, TEXT("HandleReceiveData"));
 	FString JsonString;
 	JsonString.Empty(ReceivedData->Num());
@@ -180,12 +182,12 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 
 	if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
 	{
-
+		
 		//Encoders
 		const TSharedPtr<FJsonObject> *EncoderObject;
 		bool bHasEncoderData = JsonObject->TryGetObjectField("encoder_data", EncoderObject);
 		if (bHasEncoderData) {//Pure encoder data should come in as camera data
-			FString tmpName = EncoderObject->Get()->GetStringField("cameraName") + " Lens";
+			FString tmpName = EncoderObject->Get()->GetStringField("cameraName") + " Encoders";
 			FName SubjectName(tmpName);
 
 			if (!EncounteredSubjects.Contains(SubjectName)) {
@@ -218,55 +220,27 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			EncoderObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
 			FString timecodeToSplit;
 			EncoderObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
-			TArray<FString> splitDataTC;
-			timecodeToSplit.ParseIntoArray(splitDataTC, TEXT(":"), true);
-
-			if (splitDataTC.Num() != 4) {
-				UE_LOG(LogTemp, Warning, TEXT("TC Packet %s \n"), *timecodeToSplit);
-				UE_LOG(LogTemp, Warning, TEXT("LOLED|XDTimecode Malformed"));
-				UE_LOG(LogTemp, Warning, TEXT("LOLED|Got %i"), splitDataTC.Num());
-			}
-			else {
-				TimeCode.Hours = FCString::Atoi(*splitDataTC[0]);
-				TimeCode.Minutes = FCString::Atoi(*splitDataTC[1]);
-				TimeCode.Seconds = FCString::Atoi(*splitDataTC[2]);
-				TimeCode.Frames = FCString::Atoi(*splitDataTC[3]);
-				TimeCode.bDropFrameFormat = dropFrame;
-			}
-
-			int num = 0;
-			int dem = 0;
-			//It's a decimal framerate, realistically this will only be an NTSC framerate
-			if (FGenericPlatformMath::Fmod((float)frameRate, 1)) {
-				dem = 1001;
-				num = (int)FMath::RoundHalfFromZero(frameRate) * 1000;
-			}
-			else {
-				dem = 1;
-				num = (int)frameRate;
-			}
-
 			
-
 			FrameData.Aperture = irisMapped;
 			FrameData.FocalLength = focalLengthMapped;
 			FrameData.FocusDistance = focusMapped;
 
+			FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
 			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
 			
 		}
-
+		
 		////distortion
 
 		const TSharedPtr<FJsonObject>* DistortionObject;
 		bool bHasDistortionData = JsonObject->TryGetObjectField("distortion_data", DistortionObject);
 		if (bHasDistortionData) {//Pure encoder data should come in as camera data
-			FName SubjectName = (FName)DistortionObject->Get()->GetStringField("serialNumber");
+			FString tmpName = DistortionObject->Get()->GetStringField("cameraName") + " Lens";
+			FName SubjectName(tmpName);
 
 			if (!EncounteredSubjects.Contains(SubjectName)) {
-				FLiveLinkStaticDataStruct DistortionDataStaticStruct(FLiveLinkLensStaticData::StaticStruct());
-				FLiveLinkLensStaticData DistortionData = *DistortionDataStaticStruct.Cast< FLiveLinkLensStaticData>();
-
+				FLiveLinkStaticDataStruct DistortionDataStaticStruct = FLiveLinkStaticDataStruct(FLiveLinkLensStaticData::StaticStruct());
+				FLiveLinkLensStaticData& DistortionData = *DistortionDataStaticStruct.Cast<FLiveLinkLensStaticData>();
 				
 				DistortionData.bIsAspectRatioSupported = false;
 				DistortionData.bIsFieldOfViewSupported = false;
@@ -276,10 +250,7 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 				DistortionData.bIsLocationSupported = false;
 				DistortionData.bIsScaleSupported = false;
 				DistortionData.bIsRotationSupported = false;
-
-				
-
-				DistortionData.LensModel = (FName)DistortionObject->Get()->GetStringField("modelName");
+				DistortionData.LensModel = "spherical";
 
 				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkLensRole::StaticClass(), MoveTemp(DistortionDataStaticStruct));
 				EncounteredSubjects.Add(SubjectName);
@@ -288,10 +259,36 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkLensFrameData::StaticStruct());
 			FLiveLinkLensFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkLensFrameData>();
 
-			double focalLengthRaw, focalLengthMapped, irisRaw, irisMapped, focusRaw, focusMapped;
-			TArray<TSharedPtr<FJsonValue>> fXfY = DistortionObject->Get()->GetArrayField("fXfY");
-			TArray<TSharedPtr<FJsonValue>> principalPoint = DistortionObject->Get()->GetArrayField("principalPoint");
-			TArray<TSharedPtr<FJsonValue>> distortionParameters = DistortionObject->Get()->GetArrayField("distortionParameters");
+			double focalLengthRaw, focalLengthMapped, irisRaw, irisMapped, focusRaw, focusMapped, frameRate;
+			const TArray<TSharedPtr<FJsonValue>> *fXfY;
+			const TArray<TSharedPtr<FJsonValue>>* principalPoint;
+			const TArray<TSharedPtr<FJsonValue>>* distortionParameters;
+
+			if (DistortionObject->Get()->TryGetArrayField("fXfY", fXfY)) {
+				int i = 0;
+				for (auto fx : *fXfY) {
+					FrameData.FxFy[i]= fx->AsNumber();
+					i++;
+				}
+			}
+
+			if (DistortionObject->Get()->TryGetArrayField("principalPoint", principalPoint)) {
+				int i = 0;
+				for (auto pp : *principalPoint) {
+					FrameData.PrincipalPoint[i] = pp->AsNumber();
+					i++;
+				}
+			}
+
+			if (DistortionObject->Get()->TryGetArrayField("distortionParameters", distortionParameters)) {
+					int i = 0;
+					for (auto val : *distortionParameters) {
+						FrameData.DistortionParameters.Push(val.Get()[i].AsNumber());
+						i++;
+					}
+			}
+
+			bool hasDistortion = DistortionObject->Get()->TryGetArrayField("distortionParameters", principalPoint);
 
 			DistortionObject->Get()->TryGetNumberField(TEXT("focalLengthRaw"), focalLengthRaw);
 			DistortionObject->Get()->TryGetNumberField(TEXT("focalLengthMapped"), focalLengthMapped);
@@ -299,60 +296,64 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			DistortionObject->Get()->TryGetNumberField(TEXT("irisMapped"), irisMapped);
 			DistortionObject->Get()->TryGetNumberField(TEXT("focusRaw"), focusRaw);
 			DistortionObject->Get()->TryGetNumberField(TEXT("focusMapped"), focusMapped);
+			DistortionObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
 
-			TArray<float> distortionArray;
-
-			int i = 0;
-			for (auto val : distortionParameters) {
-				distortionArray.Push(val.Get()[i].AsNumber());
-				i++;
-			}
+			FString timecodeToSplit;
+			DistortionObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
 			
-			FrameData.FxFy = FVector2D(fXfY[0]->AsNumber(), fXfY[1]->AsNumber());
-			FrameData.PrincipalPoint = FVector2D(principalPoint[0]->AsNumber(), principalPoint[1]->AsNumber());
-			FrameData.DistortionParameters = distortionArray;
 			FrameData.Aperture = irisMapped;
 			FrameData.FocalLength = focalLengthMapped;
 			FrameData.FocusDistance = focusMapped;
+			FrameData.ProjectionMode = ELiveLinkCameraProjectionMode::Perspective;
 
+			FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
 			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
 
 		}
-
+		
 		////camera
+
 
 		const TSharedPtr<FJsonObject>* CameraObject;
 		bool bHasCamersData = JsonObject->TryGetObjectField("camera_transform_data", CameraObject);
 		if (bHasCamersData) {
-			FString tmpName = CameraObject->Get()->GetStringField("cameraName") + " Transform";
+			FString camName = CameraObject->Get()->GetStringField("cameraName");
+			FString tmpName = camName + " Transform";
 			FName SubjectName(tmpName);
-			
-			//FName SubjectName = "trackertest";
+
+			FString tmpNameBase = camName + " Data";
+			FName SubjectNameBase(tmpNameBase);
+
 			if (!EncounteredSubjects.Contains(SubjectName)) {
-				FLiveLinkStaticDataStruct CameraDataStaticStruct(FLiveLinkTransformStaticData::StaticStruct());
+				FLiveLinkStaticDataStruct CameraDataStaticStruct = FLiveLinkStaticDataStruct(FLiveLinkTransformStaticData::StaticStruct());
 				FLiveLinkTransformStaticData CameraData = *CameraDataStaticStruct.Cast< FLiveLinkTransformStaticData>();
+
+
+				FLiveLinkStaticDataStruct UserStaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkBaseStaticData::StaticStruct());
+				FLiveLinkBaseStaticData& UserStaticData = *UserStaticDataStruct.Cast<FLiveLinkBaseStaticData>();
 
 				CameraData.bIsLocationSupported = true;
 				CameraData.bIsScaleSupported = false;
 				CameraData.bIsRotationSupported = true;
-				/*
-				CameraData.PropertyNames.SetNumUninitialized(7);
-				CameraData.PropertyNames[0] = FName("focusRaw");
-				CameraData.PropertyNames[1] = FName("irisRaw");
-				CameraData.PropertyNames[2] = FName("zoomRaw");
-				CameraData.PropertyNames[3] = FName("whiteBalance");
-				CameraData.PropertyNames[4] = FName("tint");
-				CameraData.PropertyNames[5] = FName("ISO");
-				CameraData.PropertyNames[6] = FName("shutter");
-				*/
+				
+				UserStaticData.PropertyNames.SetNumUninitialized(4);
+				UserStaticData.PropertyNames[0] = FName("whiteBalance");
+				UserStaticData.PropertyNames[1] = FName("tint");
+				UserStaticData.PropertyNames[2] = FName("ISO");
+				UserStaticData.PropertyNames[3] = FName("shutter");
+				
 
 				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkTransformRole::StaticClass(), MoveTemp(CameraDataStaticStruct));
+				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectNameBase }, ULiveLinkBasicRole::StaticClass(), MoveTemp(UserStaticDataStruct));
 				EncounteredSubjects.Add(SubjectName);
 			}
 
 			FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkTransformFrameData::StaticStruct());
 			FLiveLinkTransformFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkTransformFrameData>();
 
+			FLiveLinkFrameDataStruct UserFrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkBaseFrameData::StaticStruct());
+			FLiveLinkBaseFrameData& UserFrameData = *UserFrameDataStruct.Cast<FLiveLinkBaseFrameData>();
+			
 			double focalLengthRaw, irisRaw, focusRaw, whiteBalance, tint, ISO, shutter,frameRate;
 			bool dropFrame = false;
 
@@ -371,55 +372,80 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 
 			FString timecodeToSplit;
 			CameraObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
-			TArray<FString> splitDataTC;
-			timecodeToSplit.ParseIntoArray(splitDataTC, TEXT(":"), true);
-
-			if (splitDataTC.Num() != 4) {
-				UE_LOG(LogTemp, Warning, TEXT("TC Packet %s \n"), *timecodeToSplit);
-				UE_LOG(LogTemp, Warning, TEXT("LOLED|XDTimecode Malformed"));
-				UE_LOG(LogTemp, Warning, TEXT("LOLED|Got %i"), splitDataTC.Num());
-			}
-			else {
-				TimeCode.Hours = FCString::Atoi(*splitDataTC[0]);
-				TimeCode.Minutes = FCString::Atoi(*splitDataTC[1]);
-				TimeCode.Seconds = FCString::Atoi(*splitDataTC[2]);
-				TimeCode.Frames = FCString::Atoi(*splitDataTC[3]);
-				TimeCode.bDropFrameFormat = dropFrame;
-			}
-
-			int num = 0;
-			int dem = 0;
-			//It's a decimal framerate, realistically this will only be an NTSC framerate
-			if (FGenericPlatformMath::Fmod((float)frameRate, 1)) {
-				dem = 1001;
-				num = (int)FMath::RoundHalfFromZero(frameRate)*1000;
-			}
-			else {
-				dem = 1;
-				num = (int)frameRate;
-			}
-
+		
 			FrameData.Transform.SetLocation(FVector(positionArray[0].Get()->AsNumber(), positionArray[1].Get()->AsNumber(), positionArray[2].Get()->AsNumber()));
 			FrameData.Transform.SetRotation(FQuat(rotationArray[0].Get()->AsNumber(), rotationArray[1].Get()->AsNumber(), rotationArray[2].Get()->AsNumber(), rotationArray[3].Get()->AsNumber()));
-			FrameData.MetaData.SceneTime = FQualifiedFrameTime(TimeCode, FFrameRate(num, dem));
-			/*
-			FrameData.PropertyValues.SetNumUninitialized(7);
-			FrameData.PropertyValues[0] = 1.0f;
-			FrameData.PropertyValues[1] = 1.0f;
-			FrameData.PropertyValues[2] = 1.0f;
-			FrameData.PropertyValues[3] = 1.0f;
-			FrameData.PropertyValues[4] = 1.0f;
-			FrameData.PropertyValues[5] = 1.0f;
-			//FrameData.PropertyValues[6] = 1.0f;
-			*/
-
-
+			FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit,frameRate);
+				
+			//UserFrameData.PropertyValues.Empty();
+			UserFrameData.PropertyValues.SetNumUninitialized(4);
+			UserFrameData.PropertyValues[0] = whiteBalance;
+			UserFrameData.PropertyValues[1] = tint;
+			UserFrameData.PropertyValues[2] = ISO;
+			UserFrameData.PropertyValues[3] = shutter;
+			UserFrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
+	
 			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
+			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectNameBase }, MoveTemp(UserFrameDataStruct));
 
 		}
 
+		//Controller
+		const TSharedPtr<FJsonObject>* ControllerObject;
+		bool bHasControllerData = JsonObject->TryGetObjectField("controller_data", ControllerObject);
+		if (bHasControllerData) {
+			FString controllerName = ControllerObject->Get()->GetStringField("controllerName");
+			FString tmpNameBase = controllerName + " Controller";
+			FName SubjectNameBase(tmpNameBase);
 
-	
+			if (!EncounteredSubjects.Contains(SubjectNameBase)) {
+
+				FLiveLinkStaticDataStruct UserStaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkBaseStaticData::StaticStruct());
+				FLiveLinkBaseStaticData& UserStaticData = *UserStaticDataStruct.Cast<FLiveLinkBaseStaticData>();
+
+				UserStaticData.PropertyNames.SetNumUninitialized(7);
+				UserStaticData.PropertyNames[0] = FName("button1");
+				UserStaticData.PropertyNames[1] = FName("button2");
+				UserStaticData.PropertyNames[2] = FName("button3");
+				UserStaticData.PropertyNames[3] = FName("trigger");
+				UserStaticData.PropertyNames[4] = FName("touchpadPressed");
+				UserStaticData.PropertyNames[5] = FName("touchpadX");
+				UserStaticData.PropertyNames[6] = FName("touchpadY");
+
+				Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectNameBase }, ULiveLinkBasicRole::StaticClass(), MoveTemp(UserStaticDataStruct));
+				EncounteredSubjects.Add(SubjectNameBase);
+			}
+
+			FLiveLinkFrameDataStruct UserFrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkBaseFrameData::StaticStruct());
+			FLiveLinkBaseFrameData& UserFrameData = *UserFrameDataStruct.Cast<FLiveLinkBaseFrameData>();
+
+
+			double button1, button2, button3, trigger, touchpadPressed, touchpadX, touchpadY, frameRate;
+
+			ControllerObject->Get()->TryGetNumberField(TEXT("button1"), button1);
+			ControllerObject->Get()->TryGetNumberField(TEXT("button2"), button2);
+			ControllerObject->Get()->TryGetNumberField(TEXT("button3"), button3);
+			ControllerObject->Get()->TryGetNumberField(TEXT("trigger"), trigger);
+			ControllerObject->Get()->TryGetNumberField(TEXT("touchpadPressed"), touchpadPressed);
+			ControllerObject->Get()->TryGetNumberField(TEXT("touchpadX"), touchpadX);
+			ControllerObject->Get()->TryGetNumberField(TEXT("touchpadY"), touchpadY);
+
+			UserFrameData.PropertyValues.SetNumUninitialized(7);
+			UserFrameData.PropertyValues[0] = button1;
+			UserFrameData.PropertyValues[1] = button2;
+			UserFrameData.PropertyValues[2] = button3;
+			UserFrameData.PropertyValues[3] = trigger;
+			UserFrameData.PropertyValues[4] = touchpadPressed;
+			UserFrameData.PropertyValues[5] = touchpadX;
+			UserFrameData.PropertyValues[6] = touchpadY;
+
+			FString timecodeToSplit;
+			ControllerObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
+			ControllerObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
+			UserFrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
+
+			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectNameBase }, MoveTemp(UserFrameDataStruct));
+		}
 	}
 }
 

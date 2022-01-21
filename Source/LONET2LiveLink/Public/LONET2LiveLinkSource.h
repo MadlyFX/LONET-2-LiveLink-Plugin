@@ -7,7 +7,7 @@
 #include "HAL/ThreadSafeBool.h"
 #include "IMessageContext.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
-
+#include "LoledUtilities.h"
 //enable logging step 1
 DECLARE_LOG_CATEGORY_EXTERN(ModuleLog, Log, All)
 
@@ -76,7 +76,7 @@ private:
 
 	// Threadsafe Bool for terminating the main thread loop
 	FThreadSafeBool Stopping;
-
+	FThreadSafeBool Stopped;
 	// Thread to run socket operations on
 	FRunnableThread* Thread;
 
