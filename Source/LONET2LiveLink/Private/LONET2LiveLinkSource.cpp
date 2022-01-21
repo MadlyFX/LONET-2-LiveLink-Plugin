@@ -176,7 +176,7 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 	{
 		JsonString += TCHAR(Byte);
 	}
-	
+
 	TSharedPtr<FJsonObject> JsonObject;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonString);
 
@@ -219,13 +219,15 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			EncoderObject->Get()->TryGetNumberField(TEXT("focusMapped"), focusMapped);
 			EncoderObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
 			FString timecodeToSplit;
-			EncoderObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
+			if (EncoderObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit)) {
+				FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
+			}
 			
 			FrameData.Aperture = irisMapped;
 			FrameData.FocalLength = focalLengthMapped;
 			FrameData.FocusDistance = focusMapped;
 
-			FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
+			
 			Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
 			
 		}
