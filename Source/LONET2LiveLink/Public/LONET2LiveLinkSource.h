@@ -8,6 +8,9 @@
 #include "IMessageContext.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "LoledUtilities.h"
+#include "Delegates/IDelegateInstance.h"
+#include "SyncrolinkSubjectSettings.h" 
+
 //enable logging step 1
 DECLARE_LOG_CATEGORY_EXTERN(ModuleLog, Log, All)
 
@@ -16,15 +19,20 @@ class FSocket;
 class ILiveLinkClient;
 class ISocketSubsystem;
 
+
 class LONET2LIVELINK_API FLONET2LiveLinkSource : public ILiveLinkSource, public FRunnable
 {
 public:
 
 	FLONET2LiveLinkSource(FIPv4Endpoint Endpoint);
 
+
 	virtual ~FLONET2LiveLinkSource();
 
 	// Begin ILiveLinkSource Interface
+	USyncrolinkSubjectSettings* SavedSourceSettings = nullptr;
+	virtual TSubclassOf<ULiveLinkSourceSettings> GetSettingsClass() const override { return USyncrolinkSubjectSettings::StaticClass(); }
+	virtual void OnSettingsChanged(ULiveLinkSourceSettings* Settings, const FPropertyChangedEvent& PropertyChangedEvent) override;
 
 	virtual void ReceiveClient(ILiveLinkClient* InClient, FGuid InSourceGuid) override;
 
@@ -35,6 +43,7 @@ public:
 	virtual FText GetSourceType() const override { return SourceType; };
 	virtual FText GetSourceMachineName() const override { return SourceMachineName; }
 	virtual FText GetSourceStatus() const override { return SourceStatus; }
+	virtual void InitializeSettings(ULiveLinkSourceSettings* Settings) override;
 
 	// End ILiveLinkSource Interface
 
@@ -45,7 +54,8 @@ public:
 	void Start();
 	virtual void Stop() override;
 	virtual void Exit() override { }
-
+	// Deferred start delegate handle.
+	FDelegateHandle DeferredStartDelegateHandle;
 	// End FRunnable Interface
 
 	void HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> ReceivedData);
