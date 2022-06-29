@@ -216,7 +216,7 @@ uint32 FLONET2LiveLinkSource::Run()
 
 void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> ReceivedData)
 {
-	
+    if (Stopping) { return; } 
 	//UE_LOG(ModuleLog, Warning, TEXT("HandleReceiveData"));
 	FString JsonString;
 	JsonString.Empty(ReceivedData->Num());
@@ -618,8 +618,10 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			}
 			
 		}
+        
 		FPlatformProcess::Sleep(0.f);
 	}
+    JsonString.Empty();
 }
 
 #undef LOCTEXT_NAMESPACE
