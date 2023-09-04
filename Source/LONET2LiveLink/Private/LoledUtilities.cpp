@@ -20,8 +20,8 @@ FQualifiedFrameTime LoledUtilities::timeFromTimecodeString(FString timecode, flo
 
 	int num = 0;
 	int dem = 0;
-	//It's a decimal framerate, realistically this will only be an drop frame framerate. If this causes you a problem, email me.
-	if (FGenericPlatformMath::Fmod((float)frameRate, 1)) {
+	
+	if (frameRate == 29.97) {
 		dem = 1001;
 		num = (int)FMath::RoundHalfFromZero(frameRate) * 1000;
 		dropFrame = true;

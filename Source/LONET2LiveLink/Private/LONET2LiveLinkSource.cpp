@@ -488,45 +488,45 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 			bool bHasCamersData = JsonObject->TryGetObjectField("camera_transform_data", CameraObject);
 			if (bHasCamersData) {
 				FString camName = CameraObject->Get()->GetStringField("cameraName");
-				FString tmpName = camName + " Transform";
+				FString tmpName = camName;
 				FName SubjectName(tmpName);
 
 				FString tmpNameBase = camName + " Data";
 				FName SubjectNameBase(tmpNameBase);
 
 				if (!EncounteredSubjects.Contains(SubjectName)) {
-					FLiveLinkStaticDataStruct CameraDataStaticStruct = FLiveLinkStaticDataStruct(FLiveLinkTransformStaticData::StaticStruct());
-					FLiveLinkTransformStaticData CameraData = *CameraDataStaticStruct.Cast< FLiveLinkTransformStaticData>();
-
-
-					FLiveLinkStaticDataStruct UserStaticDataStruct = FLiveLinkStaticDataStruct(FLiveLinkBaseStaticData::StaticStruct());
-					FLiveLinkBaseStaticData& UserStaticData = *UserStaticDataStruct.Cast<FLiveLinkBaseStaticData>();
+					FLiveLinkStaticDataStruct CameraDataStaticStruct = FLiveLinkStaticDataStruct(FLiveLinkCameraStaticData::StaticStruct());
+					FLiveLinkCameraStaticData& CameraData = *CameraDataStaticStruct.Cast< FLiveLinkCameraStaticData>();
 
 					CameraData.bIsLocationSupported = true;
 					CameraData.bIsScaleSupported = false;
 					CameraData.bIsRotationSupported = true;
+					CameraData.bIsFocalLengthSupported = true;
+					CameraData.bIsApertureSupported = true;
+					CameraData.bIsFocusDistanceSupported = true;
+					CameraData.PropertyNames.SetNumUninitialized(1);
+					CameraData.PropertyNames[0] = FName("focalLength");
 
-					UserStaticData.PropertyNames.SetNumUninitialized(4);
-					UserStaticData.PropertyNames[0] = FName("whiteBalance");
-					UserStaticData.PropertyNames[1] = FName("tint");
-					UserStaticData.PropertyNames[2] = FName("ISO");
-					UserStaticData.PropertyNames[3] = FName("shutter");
+					CameraData.PropertyNames.SetNumUninitialized(6);
+					CameraData.PropertyNames[0] = FName("whiteBalance");
+					CameraData.PropertyNames[1] = FName("tint");
+					CameraData.PropertyNames[2] = FName("ISO");
+					CameraData.PropertyNames[3] = FName("shutter");
+					CameraData.PropertyNames[4] = FName("sensorX");
+					CameraData.PropertyNames[5] = FName("sensorY");
 
-
-					Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkTransformRole::StaticClass(), MoveTemp(CameraDataStaticStruct));
-					Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectNameBase }, ULiveLinkBasicRole::StaticClass(), MoveTemp(UserStaticDataStruct));
+					Client->PushSubjectStaticData_AnyThread({ SourceGuid, SubjectName }, ULiveLinkCameraRole::StaticClass(), MoveTemp(CameraDataStaticStruct));
 					EncounteredSubjects.Add(SubjectName);
 				}
 
-				FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkTransformFrameData::StaticStruct());
-				FLiveLinkTransformFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkTransformFrameData>();
+				FLiveLinkFrameDataStruct FrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkCameraFrameData::StaticStruct());
+				FLiveLinkCameraFrameData& FrameData = *FrameDataStruct.Cast<FLiveLinkCameraFrameData>();
 
-				FLiveLinkFrameDataStruct UserFrameDataStruct = FLiveLinkFrameDataStruct(FLiveLinkBaseFrameData::StaticStruct());
-				FLiveLinkBaseFrameData& UserFrameData = *UserFrameDataStruct.Cast<FLiveLinkBaseFrameData>();
 
 				double focalLengthRaw, irisRaw, focusRaw, whiteBalance, tint, ISO, shutter, frameRate;
+				
 				bool dropFrame = false;
-
+				
 				CameraObject->Get()->TryGetNumberField(TEXT("whiteBalance"), whiteBalance);
 				CameraObject->Get()->TryGetNumberField(TEXT("tint"), tint);
 				CameraObject->Get()->TryGetNumberField(TEXT("ISO"), ISO);
@@ -534,30 +534,35 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 				CameraObject->Get()->TryGetNumberField(TEXT("focalLengthRaw"), focalLengthRaw);
 				CameraObject->Get()->TryGetNumberField(TEXT("irisRaw"), irisRaw);
 				CameraObject->Get()->TryGetNumberField(TEXT("focusRaw"), focusRaw);
-
+	
 				CameraObject->Get()->TryGetNumberField(TEXT("frameRate"), frameRate);
 				CameraObject->Get()->TryGetBoolField(TEXT("dropFrame"), dropFrame);
 				TArray<TSharedPtr<FJsonValue>> positionArray = CameraObject->Get()->GetArrayField("position");
 				TArray<TSharedPtr<FJsonValue>> rotationArray = CameraObject->Get()->GetArrayField("orientation");
+				TArray<TSharedPtr<FJsonValue>> sensorSizeArray = CameraObject->Get()->GetArrayField("sensorSize");
 
 				FString timecodeToSplit;
 				CameraObject->Get()->TryGetStringField(TEXT("timecode"), timecodeToSplit);
+
+				FrameData.FocusDistance = focusRaw;
+				FrameData.Aperture = irisRaw;
+				FrameData.FocalLength = focalLengthRaw;
 
 				FrameData.Transform.SetLocation(FVector(positionArray[0].Get()->AsNumber(), positionArray[1].Get()->AsNumber(), positionArray[2].Get()->AsNumber()));
 				FrameData.Transform.SetRotation(FQuat(rotationArray[0].Get()->AsNumber(), rotationArray[1].Get()->AsNumber(), rotationArray[2].Get()->AsNumber(), rotationArray[3].Get()->AsNumber()));
 				FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
 
 				//UserFrameData.PropertyValues.Empty();
-				UserFrameData.PropertyValues.SetNumUninitialized(4);
-				UserFrameData.PropertyValues[0] = whiteBalance;
-				UserFrameData.PropertyValues[1] = tint;
-				UserFrameData.PropertyValues[2] = ISO;
-				UserFrameData.PropertyValues[3] = shutter;
-				UserFrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
+				FrameData.PropertyValues.SetNumUninitialized(6);
+				FrameData.PropertyValues[0] = whiteBalance;
+				FrameData.PropertyValues[1] = tint;
+				FrameData.PropertyValues[2] = ISO;
+				FrameData.PropertyValues[3] = shutter;
+				FrameData.PropertyValues[4] = sensorSizeArray[0].Get()->AsNumber();
+				FrameData.PropertyValues[5] = sensorSizeArray[1].Get()->AsNumber();
+				FrameData.MetaData.SceneTime = LoledUtilities::timeFromTimecodeString(timecodeToSplit, frameRate);
 
 				Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectName }, MoveTemp(FrameDataStruct));
-				Client->PushSubjectFrameData_AnyThread({ SourceGuid, SubjectNameBase }, MoveTemp(UserFrameDataStruct));
-
 			}
 
 			//Controller
