@@ -504,8 +504,6 @@ void FLONET2LiveLinkSource::HandleReceivedData(TSharedPtr<TArray<uint8>, ESPMode
 					CameraData.bIsFocalLengthSupported = true;
 					CameraData.bIsApertureSupported = true;
 					CameraData.bIsFocusDistanceSupported = true;
-					CameraData.PropertyNames.SetNumUninitialized(1);
-					CameraData.PropertyNames[0] = FName("focalLength");
 
 					CameraData.PropertyNames.SetNumUninitialized(6);
 					CameraData.PropertyNames[0] = FName("whiteBalance");

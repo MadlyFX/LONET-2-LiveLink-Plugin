@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
 	"Version": 1,
-	"VersionName": "2.4.1",
+	"VersionName": "2.5",
 	"FriendlyName": "LONET 2 Plugin",
 	"Description": "Receive realtime virtual production data",
 	"Category": "Virtual Production",
@@ -11,14 +11,13 @@
 	"MarketplaceURL": "",
 	"SupportURL": "",
 	"CanContainContent": true,
-	"IsBetaVersion": false,
+	"IsBetaVersion": true,
 	"Installed": true,
 	"Modules": [
 		{
 			"Name": "LONET2LiveLink",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
-
 		}
 	],
 	"Plugins": [
@@ -26,5 +25,6 @@
 			"Name": "LiveLinkLens",
 			"Enabled": true
 		}
-	]
+	],
+	"IsExperimentalVersion": false
 }
