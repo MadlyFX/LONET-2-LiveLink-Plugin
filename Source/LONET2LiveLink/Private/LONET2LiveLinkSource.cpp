@@ -43,8 +43,8 @@ FLONET2LiveLinkSource::FLONET2LiveLinkSource(FIPv4Endpoint InEndpoint)
 
 	SourceStatus = LOCTEXT("SourceStatus_DeviceNotFound", "Device Not Found");
 	SourceType = LOCTEXT("LONET2LiveLinkSourceType", "LONET 2 LiveLink");
-	SourceMachineName = LOCTEXT("LONET2LiveLinkSourceMachineName", "localhost");
-
+	//SourceMachineName = LOCTEXT("LONET2LiveLinkSourceMachineName", DeviceEndpoint.ToString());
+	SourceMachineName= FText::FromString(DeviceEndpoint.ToString());
 	UE_LOG(ModuleLog, Warning, TEXT("Setup socket"));
 	//setup socket
 	if (DeviceEndpoint.Address.IsMulticastAddress())
