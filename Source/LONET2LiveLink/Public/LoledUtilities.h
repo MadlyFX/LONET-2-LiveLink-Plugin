@@ -3,11 +3,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Misc/QualifiedFrameTime.h"
+#include "Misc/FrameRate.h"
+#include "Misc/Timecode.h"
+#include "Containers/UnrealString.h"
 
 /**
  * 
  */
-class LONET2LIVELINK_API LoledUtilities
+class LoledUtilities
 {
 public:
 	LoledUtilities();

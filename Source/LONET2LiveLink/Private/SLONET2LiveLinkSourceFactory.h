@@ -6,6 +6,7 @@
 #include "Input/Reply.h"
 #include "Types/SlateEnums.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
+#include "Interfaces/IPv4/IPv4Endpoint.h"
 
 class SEditableTextBox;
 

@@ -6,7 +6,7 @@ public class LONET2LiveLink : ModuleRules
 {
 	public LONET2LiveLink(ReadOnlyTargetRules Target) : base(Target)
 	{
-		PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+		PCHUsage = ModuleRules.PCHUsageMode.Default;
 
 		PublicDependencyModuleNames.AddRange(
 			new string[]
@@ -14,7 +14,8 @@ public class LONET2LiveLink : ModuleRules
 				"Core",
 				"LiveLinkInterface",
 				"Messaging",
-				"LiveLinkLens"
+				"LiveLinkCamera",
+                "LiveLinkLens"
 			});
 
 		PrivateDependencyModuleNames.AddRange(
